@@ -24,25 +24,24 @@ public final class MineseekerCommand {
      */
     @SubscribeEvent //Observer pattern this is the subscribing event for command events later we're going to use it also for player positions
     public static void onRegisterCommands(RegisterCommandsEvent e) {
-        //
-        // This is the Builder Pattern part.
-        //
         e.getDispatcher().register(
-                LiteralArgumentBuilder.<CommandSourceStack>literal("mineseeker") // <--- 1. Create the builder and command name
-                        .requires(src -> src.hasPermission(2)) // <--- 2. Has to enable cheats for using the command
-                        .then(Commands.argument("structure", StringArgumentType.word()) // <--- 3. suggestions for autocompletin
-                                //
-                                // This connects to the other class for suggestions
-                                //
-                                .suggests(MineseekerSuggestions.STRUCTURE_SUGGESTIONS) // <-- 3a. get suggestions
-                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 50)) // <--- 4. n times of how many stractures to find
-                                        //
-                                        // This connects to the logic class
-                                        //
-                                        .executes(MineseekerLogic::runWithDefaultRadius) // <--- 5. call runWithDefaultRadius defaulted at 12000 blocks for range if not selected
-                                        .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer(512, 64000)) // 6. range of search should be defaulted at 12000 blocks else user can specify the range of maximum 64000
-                                                .executes(MineseekerLogic::runWithCustomRadius) // <--- 7. Attach another action
-                                        ))));
-        // This makes the command, I think .
+                LiteralArgumentBuilder.<CommandSourceStack>literal("mineseeker")
+                        .requires(src -> src.hasPermission(2))
+                        .then(
+                                Commands.argument("query", StringArgumentType.greedyString())
+                                        .suggests((ctx, builder) -> {
+                                            String remaining = builder.getRemaining();
+                                            String[] parts = remaining.split("\\s+");
+                                            String last = parts[parts.length - 1];
+
+                                            int offset = builder.getStart() + remaining.lastIndexOf(last);
+                                            builder = builder.createOffset(offset);
+
+                                            return MineseekerSuggestions.STRUCTURE_SUGGESTIONS.getSuggestions(ctx, builder);
+                                        })
+                                        .executes(ctx -> MineseekerLogic.runInProgress(ctx, 12000)) //we will replace the "runInProgress" method with the "run" method once we implement the Locate logic
+                        )
+        );
     }
+
 }
