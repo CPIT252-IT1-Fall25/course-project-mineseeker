@@ -5,8 +5,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 
 
 //This class holds all the EXECUTION LOGIC for the command.
@@ -18,7 +16,7 @@ public final class MineseekerLogic {
 //   This method runs when the user didn't!! specify a radius.
 
     public static int runWithDefaultRadius(CommandContext<CommandSourceStack> commandContext) {
-        return run(commandContext, 12000); // Calls the main logic with the default
+        return runInProgress(commandContext, 12000); // Calls the main logic with the default
     }
 
 
@@ -26,7 +24,7 @@ public final class MineseekerLogic {
 
     public static int runWithCustomRadius(CommandContext<CommandSourceStack> commandContext) {
         int radius = IntegerArgumentType.getInteger(commandContext, "radiusBlocks");
-        return run(commandContext, radius); // Calls the main logic with the custom radius
+        return runInProgress(commandContext, radius); // Calls the main logic with the custom radius
     }
 
 
@@ -34,42 +32,18 @@ public final class MineseekerLogic {
 // but the main logic is "in progress".
 // This proves the Builder Pattern successfully built and registered the command.
 
-    public static int runInProgress(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
+    private static int runInProgress(CommandContext<CommandSourceStack> commandContext, int radiusBlocks) {
+        // We can still read the arguments to prove they were parsed
+        String structure = StringArgumentType.getString(commandContext, "structure");
+        int count = IntegerArgumentType.getInteger(commandContext, "count");
 
-        String raw = StringArgumentType.getString(ctx, "query");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("In Progress: " + raw),
+        // Send a simple "In Progress" message
+        commandContext.getSource().sendSuccess(() ->
+                        Component.literal("In Progress: Search for " + count + " '" + structure + "' in " + radiusBlocks + " blocks is pending." +
+                                "\n still WIP"),
                 false
         );
-
-        return 1;
+        return 1; // Return 1 for success
     }
-
-    public static int run(CommandContext<CommandSourceStack> ctx, int defaultRadius) {
-        CommandSourceStack src = ctx.getSource();
-        ServerPlayer player;
-        try {
-            player = src.getPlayerOrException();
-        } catch (Exception ex) {
-            src.sendFailure(Component.literal("Players only."));
-            return 0;
-        }
-
-        ServerLevel level = player.serverLevel();
-        String raw = StringArgumentType.getString(ctx, "query");
-
-        SearchRequest request = new SearchBuilder()
-                .setDefaultRadius(defaultRadius)
-                .parse(raw)
-                .build();
-
-        for (SearchTask task : request.tasks()) {
-            // locateStructure(level, player, task, src);
-        }
-
-        return 1;
-    }
-
-    //LATER ADD FULL SEARCH LOGIC
+ //LATER ADD FULL SEARCH LOGIC
 }
