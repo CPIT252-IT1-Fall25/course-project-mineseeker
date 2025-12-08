@@ -23,31 +23,26 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 
-//This class holds all the EXECUTION LOGIC for the command.
-//Its only responsibility is to *run* the command.
+/**
+ * DESIGN PATTERN: Facade Pattern
+ * This class hides the complexity of structure-search logic behind a single entry point.
+ * Command classes interact with this class without knowing internal Minecraft mechanics.
+ *
+ * RESPONSIBILITY:
+ * - Core search and calculation logic
+ */
 
 public final class MineseekerLogic {
 
 
-//   This method runs when the user didn't!! specify a radius.
-
-    public static int runWithDefaultRadius(CommandContext<CommandSourceStack> commandContext) {
-        return runInProgress(commandContext, 12000); // Calls the main logic with the default
-    }
-
-
-//This method runs when the user does!! specify a radius.
-
-    public static int runWithCustomRadius(CommandContext<CommandSourceStack> commandContext) {
+    public static int run(CommandContext<CommandSourceStack> commandContext) {
         int radius = IntegerArgumentType.getInteger(commandContext, "radiusBlocks");
-        return run(commandContext, radius); // Calls the main logic with the custom radius
+        return searchForStructure(commandContext, radius); // Calls the main logic with the custom radius
     }
 
-
-// A placeholder "run" method to show the command is working,
-// but the main logic is "in progress".
-// This proves the Builder Pattern successfully built and registered the command.
-
+    // A placeholder "run" method to show the command is working,
+    // but the main logic is "in progress".
+    // This proves the Builder Pattern successfully built and registered the command.
     private static int runInProgress(CommandContext<CommandSourceStack> commandContext, int radiusBlocks) {
         // We can still read the arguments to prove they were parsed
         String structure = StringArgumentType.getString(commandContext, "structure");
@@ -61,8 +56,17 @@ public final class MineseekerLogic {
         );
         return 1; // Return 1 for success
     }
-    //LATER ADD FULL SEARCH LOGIC
-    private static int run(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
+
+    /**
+     * Searches around the player for nearby structures that match the given input.
+     * The search expands outward from the player in rings, collects found structure
+     * locations, sorts them by distance, and prints the closest results.
+     *
+     * @param ctx          command context containing the player and arguments
+     * @param radiusBlocks maximum search distance in blocks
+     * @return number of structures reported, or 0 if none found or not a player
+     */
+    private static int searchForStructure(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
         try {
@@ -143,7 +147,15 @@ public final class MineseekerLogic {
         return best.size();
     }
 
-    // --------- target resolution: id, namespaced id, or tag ----------
+    /**
+    * Converts the user’s structure input into a set of target structures.
+    * Supports structure tags (#...), full names (namespace:path),
+     * and short names (path only).
+     *
+     * @param level server level used to access the structure registry
+     * @param raw   raw structure name entered by the user
+    * @return matching structure set, or null if none match
+    */
     private static HolderSet<Structure> resolveTarget(ServerLevel level, String raw) {
         String s = raw.toLowerCase(Locale.ROOT).trim();
         Registry<Structure> reg = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
@@ -177,6 +189,13 @@ public final class MineseekerLogic {
         return null;
     }
 
+    /**
+     * Creates a ResourceLocation from a string.
+     * Adds the default Minecraft namespace if missing.
+     *
+     * @param s input string
+     * @return ResourceLocation, or null if invalid
+     */
     private static ResourceLocation toRL(String s) {
         try {
             if (s.contains(":")) return new ResourceLocation(s);
@@ -186,12 +205,25 @@ public final class MineseekerLogic {
         }
     }
 
+    /**
+     * Calculates the horizontal (XZ) distance between two block positions.
+     *
+     * @param a first position
+     * @param b second position
+     * @return distance in blocks
+     */
     private static double dist2D(BlockPos a, BlockPos b) {
         double dx = a.getX() - b.getX();
         double dz = a.getZ() - b.getZ();
         return Math.sqrt(dx * dx + dz * dz);
     }
 
+    /**
+     * Gets a readable name for a structure set to display in messages.
+     *
+     * @param set target structure set
+     * @return structure name as text
+     */
     private static String prettyName(HolderSet<Structure> set) {
         return set.stream().findFirst()
                 .flatMap(h -> h.unwrapKey())

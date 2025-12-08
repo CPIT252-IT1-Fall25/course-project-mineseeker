@@ -1,0 +1,16 @@
+/mineseeker igloo 3 3000
+/gamemode spectator
+/tp 400 100 1904
+/tp 3936 100 1872
+/tp -400 100 -1904
+/mineseeker mansion 4 6500
+/tp 3072 100 3184
+/mineseeker desert_pyramid 4
+/mineseeker desert_pyramid 4 6500
+/tp -1296 100 1680
+/LocatePlus village_desert 3 6500
+/tp -1456 100 1664
+/locate structure minecraft:village_desert
+/LocatePlus minecraft:bastion_remnant 3 6500
+/LocatePlus minecraft:buried_treasure 1 6500
+/LocatePlus buried_treasure 2 6500
