@@ -25,12 +25,11 @@ public final class MineseekerSuggestions {
         ServerLevel level = ctx.getSource().getLevel();
         Registry<Structure> reg = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
 
-        // Suggest both namespaced ids and plain paths
-        // STILL UNDERDEVELOPMENT.
+
         reg.holders().forEach(reference -> reference.unwrapKey().ifPresent(key -> {
-            String full = key.location().toString();          // example minecraft:village
+
             String path = key.location().getPath();           // example village
-            if (full.startsWith(builder.getRemainingLowerCase())) builder.suggest(full);
+
             if (path.startsWith(builder.getRemainingLowerCase())) builder.suggest(path);
         }));
 
