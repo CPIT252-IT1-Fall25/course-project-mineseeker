@@ -5,6 +5,11 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -44,5 +49,9 @@ public final class MineseekerCommand {
                                                 .executes(MineseekerLogic::runWithCustomRadius) // <--- 7. Attach another action
                                         ))));
         // This makes the command, I think .
+
+        
     }
+
+
 }

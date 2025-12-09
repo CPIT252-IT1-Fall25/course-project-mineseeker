@@ -18,6 +18,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -175,15 +178,36 @@ public final class MineseekerLogic {
         ), false);
 
         // Send individual structure locations
+        // Send individual structure locations (click-to-teleport)
         for (int i = 0; i < best.size(); i++) {
             final int idx = i;
             BlockPos p = best.get(idx);
             long distance = Math.round(dist2D(p, playerPos));
-            src.sendSuccess(() -> Component.literal(
-                    String.format("  %d. [%d, %d, %d] (%d blocks away)",
-                            idx + 1, p.getX(), p.getY(), p.getZ(), distance)
-            ), false);
+
+            Component coordsComponent = Component.literal(
+                    String.format("[%d, %d, %d]", p.getX(), p.getY(), p.getZ())
+            ).withStyle(style -> style
+                    .withColor(0x00FF00)
+                    .withClickEvent(new ClickEvent(
+                            ClickEvent.Action.RUN_COMMAND,
+                            // run as the clicking player; use src.getPlayerOrException().getName().getString() if needed
+                            "/tp " + player.getName().getString()
+                                    + " " +
+                                    p.getX() + " " + p.getY() + " " + p.getZ()
+                    ))
+                    .withHoverEvent(new HoverEvent(
+                            HoverEvent.Action.SHOW_TEXT,
+                            Component.literal("Click to teleport")
+                    ))
+            );
+
+            Component line = Component.literal("  " + (idx + 1) + ". ")
+                    .append(coordsComponent)
+                    .append(Component.literal(String.format(" (%d blocks away)", distance)));
+
+            src.sendSuccess(() -> line, false);
         }
+
 
         return best.size();
     }
