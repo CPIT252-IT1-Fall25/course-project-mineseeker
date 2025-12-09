@@ -25,12 +25,19 @@ import net.minecraft.network.chat.HoverEvent;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-
-/**
- * This class holds all the EXECUTION LOGIC for the command.
- * Its only responsibility is to *run* the command and perform structure searches.
- */
+   /**
+    * DESIGN PATTERN: Facade
+    *
+    * This class encapsulates all the execution logic for the mineseeker command.
+    * It provides a simplified interface:
+    * - runWithDefaultRadius()
+    * - runWithCustomRadius()
+    *
+    * Internally handles complex operations: searching structures in rings, distance sorting,
+    * formatting output, click-to-teleport components.
+    *
+    * The class is stateless and globally accessible, like a utility facade for command execution.
+    */
 public final class MineseekerLogic {
 
     // Optimization constants

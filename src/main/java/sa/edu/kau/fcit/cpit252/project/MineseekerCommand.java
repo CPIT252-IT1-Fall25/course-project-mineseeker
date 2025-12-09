@@ -12,46 +12,45 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-
-
+    /**
+    * DESIGN PATTERN: Builder Pattern
+     *
+    * This class uses the Builder Pattern via Brigadier's LiteralArgumentBuilder.
+    * Each step of the command is chained:
+    * - literal("mineseeker")       <- command name
+    * - requires(...)               <- permission requirements
+    * - then(...)                   <- arguments added incrementally
+    * - executes(...)               <- final execution logic
+    *
+    * The pattern allows building a complex command in a readable, step-by-step manner.
+    * ----------------------------------------------------------------------------------
+    * DESIGN PATTERN: Command Pattern
+    * This part uses the Command Pattern: the LiteralArgumentBuilder is the invoker,
+    * the executes(...) method references are concrete commands,
+    * and MineseekerLogic methods are the receiver that perform the actual action.
+    */
 public final class MineseekerCommand {
 
-
-    /**
-     * This class is for the command.
-     * It's for making the command step-by-step.
-     *
-     * .literal("mineseeker")   <- this is the command name
-     * .requires(...)           <- this sets who can use it (needs cheats)
-     * .then(...)               <- this adds an argument (like 'structure')
-     * .then(...)               <- this adds another argument (like 'count')
-     * .executes(...)           <- this is what happens when you run the command
-     */
-    @SubscribeEvent //Observer pattern this is the subscribing event for command events later we're going to use it also for player positions
+    @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent e) {
         //
         // This is the Builder Pattern part.
         //
         e.getDispatcher().register(
-                LiteralArgumentBuilder.<CommandSourceStack>literal("mineseeker") // <--- 1. Create the builder and command name
+                LiteralArgumentBuilder.<CommandSourceStack>literal("mineseeker") // <--- 1. Create the builder and command name e.g. /mineseeker in minecraft chat
                         .requires(src -> src.hasPermission(2)) // <--- 2. Has to enable cheats for using the command
                         .then(Commands.argument("structure", StringArgumentType.word()) // <--- 3. suggestions for autocompletin
                                 //
                                 // This connects to the other class for suggestions
                                 //
-                                .suggests(MineseekerSuggestions.STRUCTURE_SUGGESTIONS) // <-- 3a. get suggestions
+                                .suggests(MineseekerSuggestions.STRUCTURE_SUGGESTIONS) // <-- 3a. get suggestions for the structures
                                 .then(Commands.argument("count", IntegerArgumentType.integer(1, 50)) // <--- 4. n times of how many stractures to find
                                         //
                                         // This connects to the logic class
                                         //
                                         .executes(MineseekerLogic::runWithDefaultRadius) // <--- 5. call runWithDefaultRadius defaulted at 12000 blocks for range if not selected
-                                        .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer(512, 64000)) // 6. range of search should be defaulted at 12000 blocks else user can specify the range of maximum 64000
-                                                .executes(MineseekerLogic::runWithCustomRadius) // <--- 7. Attach another action
+                                        .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer(512, 64000)) // 6. else user can specify the range of maximum 64000
+                                                 .executes(MineseekerLogic::runWithCustomRadius) // <--- 7. call runWithCustomRadius
                                         ))));
-        // This makes the command, I think .
-
-        
     }
-
-
 }
