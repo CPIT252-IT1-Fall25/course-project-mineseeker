@@ -21,86 +21,101 @@ import net.minecraft.world.level.levelgen.structure.Structure;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 
 /**
- * DESIGN PATTERN: Facade Pattern
- * This class hides the complexity of structure-search logic behind a single entry point.
- * Command classes interact with this class without knowing internal Minecraft mechanics.
- *
- * RESPONSIBILITY:
- * - Core search and calculation logic
+ * This class holds all the EXECUTION LOGIC for the command.
+ * Its only responsibility is to *run* the command and perform structure searches.
  */
-
 public final class MineseekerLogic {
 
+    // Optimization constants
+    private static final int MIN_SAMPLES_PER_RING = 12;
+    private static final int MAX_SAMPLES_PER_RING = 32;
+    private static final int RING_SIZE = 512; // blocks per ring
+    private static final int MAX_EMPTY_RINGS = 3; // Stop after N consecutive empty rings
+    private static final int MAX_TOTAL_ITERATIONS = 200; // Safety limit to prevent infinite loops
+    private static final int CANDIDATE_MULTIPLIER = 3; // Find 3x requested count for better selection
 
-    public static int run(CommandContext<CommandSourceStack> commandContext) {
-        int radius = IntegerArgumentType.getInteger(commandContext, "radiusBlocks");
-        return searchForStructure(commandContext, radius); // Calls the main logic with the custom radius
-    }
-
-    // A placeholder "run" method to show the command is working,
-    // but the main logic is "in progress".
-    // This proves the Builder Pattern successfully built and registered the command.
-    private static int runInProgress(CommandContext<CommandSourceStack> commandContext, int radiusBlocks) {
-        // We can still read the arguments to prove they were parsed
-        String structure = StringArgumentType.getString(commandContext, "structure");
-        int count = IntegerArgumentType.getInteger(commandContext, "count");
-
-        // Send a simple "In Progress" message
-        commandContext.getSource().sendSuccess(() ->
-                        Component.literal("In Progress: Search for " + count + " '" + structure + "' in " + radiusBlocks + " blocks is pending." +
-                                "\n still WIP"),
-                false
-        );
-        return 1; // Return 1 for success
+    /**
+     * Runs the command with the default radius of 12000 blocks.
+     * Called when the user doesn't specify a radius.
+     */
+    public static int runWithDefaultRadius(CommandContext<CommandSourceStack> commandContext) {
+        return run(commandContext, 12000); // Calls the main logic with the default
     }
 
     /**
-     * Searches around the player for nearby structures that match the given input.
-     * The search expands outward from the player in rings, collects found structure
-     * locations, sorts them by distance, and prints the closest results.
-     *
-     * @param ctx          command context containing the player and arguments
-     * @param radiusBlocks maximum search distance in blocks
-     * @return number of structures reported, or 0 if none found or not a player
+     * Runs the command with a custom radius specified by the user.
+     * Called when the user provides a radiusBlocks argument.
      */
-    private static int searchForStructure(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
+    public static int runWithCustomRadius(CommandContext<CommandSourceStack> commandContext) {
+        int radius = IntegerArgumentType.getInteger(commandContext, "radiusBlocks");
+        return run(commandContext, radius);
+    }
+
+    /**
+     * Main search algorithm - optimized for faster searches.
+     * Uses a ring-based search pattern that expands outward from the player.
+     *
+     * @param ctx The command context
+     * @param radiusBlocks The search radius in blocks
+     * @return The number of structures found and reported
+     */
+    private static int run(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player;
+
         try {
             player = src.getPlayerOrException();
         } catch (Exception ex) {
-            src.sendFailure(Component.literal("Players only."));
+            src.sendFailure(Component.literal("This command can only be used by players."));
             return 0;
         }
-        ServerLevel level = player.serverLevel();
 
+        ServerLevel level = player.serverLevel();
         String rawIn = StringArgumentType.getString(ctx, "structure");
-        int n = IntegerArgumentType.getInteger(ctx, "count");
+        int requestedCount = IntegerArgumentType.getInteger(ctx, "count");
 
         HolderSet<Structure> target = resolveTarget(level, rawIn);
         if (target == null) {
-            src.sendFailure(Component.literal("Unknown structure: " + rawIn));
+            src.sendFailure(Component.literal("Unknown structure: \"" + rawIn + "\". Use tab completion for valid structures."));
             return 0;
         }
 
         final BlockPos playerPos = player.blockPosition();
-        final int samplesPerRing = 24;
-        final boolean skipKnown = false;
 
+        // Adaptive sampling: fewer samples for larger radii to improve performance
+        int samplesPerRing = calculateSamplesPerRing(radiusBlocks);
+
+        // Use chunk coordinates as keys to avoid duplicate structures in the same chunk
         record ChunkKey(int cx, int cz) {}
+
         Set<ChunkKey> seen = new HashSet<>();
         Map<ChunkKey, BlockPos> found = new HashMap<>();
 
-        int maxRings = Math.max(1, radiusBlocks / 512);
+        int maxRings = Math.max(1, radiusBlocks / RING_SIZE);
+        int emptyRings = 0;
+        int totalIterations = 0;
+        int targetCandidates = requestedCount * CANDIDATE_MULTIPLIER;
+
+        // Search in expanding rings around the player
         outer:
         for (int ring = 1; ring <= maxRings; ring++) {
-            int ringRadius = ring * 512;
+            int ringRadius = ring * RING_SIZE;
             int radiusChunks = Math.max(16, ringRadius / 16);
+            boolean foundInRing = false;
 
             for (int i = 0; i < samplesPerRing; i++) {
+                totalIterations++;
+
+                // Safety limit to prevent extremely long searches
+                if (totalIterations > MAX_TOTAL_ITERATIONS) {
+                    break outer;
+                }
+
+                // Calculate probe position in a circle around the player
                 double angle = 2 * Math.PI * i / samplesPerRing;
                 BlockPos probe = playerPos.offset(
                         Mth.floor(Math.cos(angle) * ringRadius),
@@ -108,39 +123,65 @@ public final class MineseekerLogic {
                         Mth.floor(Math.sin(angle) * ringRadius)
                 );
 
-                // Forge 1.20.2 returns Pair or null
+                // Search for nearest structure from this probe point
                 Pair<BlockPos, Holder<Structure>> result = level.getChunkSource().getGenerator()
-                        .findNearestMapStructure(level, target, probe, radiusChunks, skipKnown);
+                        .findNearestMapStructure(level, target, probe, radiusChunks, false);
+
                 if (result == null) continue;
 
+                foundInRing = true;
                 BlockPos hit = result.getFirst();
+                // Convert block position to chunk coordinates (divide by 16, using bit shift)
                 ChunkKey key = new ChunkKey(hit.getX() >> 4, hit.getZ() >> 4);
+
+                // Only add if we haven't seen this chunk before (avoid duplicates)
                 if (seen.add(key)) {
                     found.put(key, hit.immutable());
-                    if (found.size() >= n * 3) break outer;
+
+                    // Early termination: if we found enough candidates, stop searching
+                    if (found.size() >= targetCandidates) {
+                        break outer;
+                    }
                 }
+            }
+
+            // Optimization: if we haven't found anything in several consecutive rings, stop early
+            // Only stop if we haven't found ANY structures yet (not if we found some earlier)
+            if (!foundInRing) {
+                emptyRings++;
+                if (emptyRings >= MAX_EMPTY_RINGS && found.isEmpty()) {
+                    break;
+                }
+            } else {
+                emptyRings = 0; // Reset counter if we found something in this ring
             }
         }
 
         if (found.isEmpty()) {
-            src.sendFailure(Component.literal("No matches found within " + radiusBlocks + " blocks."));
+            src.sendFailure(Component.literal("No " + prettyName(target) + " found within " + radiusBlocks + " blocks."));
             return 0;
         }
 
+        // Sort by distance and take the N closest structures
         List<BlockPos> best = found.values().stream()
-                .sorted(Comparator.comparingDouble(p -> dist2D(p, playerPos)))
-                .limit(n)
+                .sorted(Comparator.comparingDouble(p -> dist2DSquared(p, playerPos)))
+                .limit(requestedCount)
                 .collect(Collectors.toList());
+
+        // Send header message
+        String structureName = prettyName(target);
         src.sendSuccess(() -> Component.literal(
-                "Nearest " + prettyName(target) + " within " + radiusBlocks + " blocks (" + best.size() + "):"
+                String.format("Found %d %s within %d blocks:", best.size(), structureName, radiusBlocks)
         ), false);
 
+        // Send individual structure locations
         for (int i = 0; i < best.size(); i++) {
-            final int idx = i; // effectively final for lambda
+            final int idx = i;
             BlockPos p = best.get(idx);
-            long d = Math.round(dist2D(p, playerPos));
+            long distance = Math.round(dist2D(p, playerPos));
             src.sendSuccess(() -> Component.literal(
-                    "  " + (idx + 1) + ". x=" + p.getX() + " y=" + p.getY() + " z=" + p.getZ() + "  (" + d + " blocks)"
+                    String.format("  %d. [%d, %d, %d] (%d blocks away)",
+                            idx + 1, p.getX(), p.getY(), p.getZ(), distance)
             ), false);
         }
 
@@ -148,14 +189,29 @@ public final class MineseekerLogic {
     }
 
     /**
-    * Converts the user’s structure input into a set of target structures.
-    * Supports structure tags (#...), full names (namespace:path),
-     * and short names (path only).
+     * Calculate adaptive samples per ring based on radius.
+     * Smaller radii get more samples for accuracy, larger radii get fewer for speed.
+     * This optimization significantly improves performance for large search areas.
      *
-     * @param level server level used to access the structure registry
-     * @param raw   raw structure name entered by the user
-    * @return matching structure set, or null if none match
-    */
+     * @param radiusBlocks The search radius in blocks
+     * @return The number of sample points to use per ring
+     */
+    private static int calculateSamplesPerRing(int radiusBlocks) {
+        if (radiusBlocks <= 2000) {
+            return MAX_SAMPLES_PER_RING; // 32 samples for small radius (high accuracy)
+        } else if (radiusBlocks <= 10000) {
+            return 24; // 24 samples for medium radius
+        } else if (radiusBlocks <= 30000) {
+            return 16; // 16 samples for large radius
+        } else {
+            return MIN_SAMPLES_PER_RING; // 12 samples for very large radius (prioritize speed)
+        }
+    }
+
+    /**
+     * Resolve structure target from string input.
+     * Supports: tag format (#namespace:path), namespaced ID (namespace:path), or plain path (path).
+     */
     private static HolderSet<Structure> resolveTarget(ServerLevel level, String raw) {
         String s = raw.toLowerCase(Locale.ROOT).trim();
         Registry<Structure> reg = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
@@ -165,40 +221,53 @@ public final class MineseekerLogic {
             String tagStr = s.substring(1);
             ResourceLocation tagId = toRL(tagStr);
             if (tagId == null) return null;
+
             TagKey<Structure> tag = TagKey.create(Registries.STRUCTURE, tagId);
-            var named = reg.getTag(tag);                 // Optional<HolderSet.Named<Structure>>
+            var named = reg.getTag(tag);
             return named.map(x -> (HolderSet<Structure>) x).orElse(null);
         }
 
-        // Exact id form: namespace:path  or plain path → minecraft:path
+        // Exact id form: namespace:path or plain path → minecraft:path
         ResourceLocation id = toRL(s);
         if (id != null) {
             var holder = reg.getHolder(ResourceKey.create(Registries.STRUCTURE, id));
-            if (holder.isPresent()) return HolderSet.direct(holder.get());
-        }
-
-        // Loose path match (e.g., "village")
-        for (Holder<Structure> h : reg.holders().collect(Collectors.toList())) {
-            if (h.unwrapKey().isPresent()) {
-                ResourceLocation rl = h.unwrapKey().get().location();
-                if (rl.getPath().equalsIgnoreCase(s)) {
-                    return HolderSet.direct(h);
-                }
+            if (holder.isPresent()) {
+                return HolderSet.direct(holder.get());
             }
         }
+
+        // Loose path match (e.g., "village" matches "minecraft:village")
+        // Optimized: use stream instead of collecting to list first
+        Optional<Holder.Reference<Structure>> match = reg.holders()
+                .filter(h -> h.unwrapKey().isPresent())
+                .filter(h -> {
+                    ResourceLocation rl = h.unwrapKey().get().location();
+                    return rl.getPath().equalsIgnoreCase(s);
+                })
+                .findFirst();
+
+        if (match.isPresent()) {
+            return HolderSet.direct(match.get());
+        }
+
         return null;
     }
 
     /**
-     * Creates a ResourceLocation from a string.
-     * Adds the default Minecraft namespace if missing.
+     * Convert string to ResourceLocation.
+     * Handles both "namespace:path" and plain "path" (defaults to minecraft:path).
      *
-     * @param s input string
-     * @return ResourceLocation, or null if invalid
+     * @param s The string to convert
+     * @return ResourceLocation or null if invalid
      */
     private static ResourceLocation toRL(String s) {
+        if (s == null || s.isEmpty()) {
+            return null;
+        }
         try {
-            if (s.contains(":")) return new ResourceLocation(s);
+            if (s.contains(":")) {
+                return new ResourceLocation(s);
+            }
             return new ResourceLocation("minecraft", s);
         } catch (Exception e) {
             return null;
@@ -206,29 +275,43 @@ public final class MineseekerLogic {
     }
 
     /**
-     * Calculates the horizontal (XZ) distance between two block positions.
+     * Calculate squared 2D distance between two block positions (ignoring Y coordinate).
+     * Used for distance comparisons to avoid expensive sqrt calculations.
      *
-     * @param a first position
-     * @param b second position
-     * @return distance in blocks
+     * @param a First position
+     * @param b Second position
+     * @return Squared distance
      */
-    private static double dist2D(BlockPos a, BlockPos b) {
+    private static double dist2DSquared(BlockPos a, BlockPos b) {
         double dx = a.getX() - b.getX();
         double dz = a.getZ() - b.getZ();
-        return Math.sqrt(dx * dx + dz * dz);
+        return dx * dx + dz * dz;
     }
 
     /**
-     * Gets a readable name for a structure set to display in messages.
+     * Calculate 2D distance between two block positions (ignoring Y coordinate).
+     * Used for display purposes only.
      *
-     * @param set target structure set
-     * @return structure name as text
+     * @param a First position
+     * @param b Second position
+     * @return Distance in blocks
+     */
+    private static double dist2D(BlockPos a, BlockPos b) {
+        return Math.sqrt(dist2DSquared(a, b));
+    }
+
+    /**
+     * Get a pretty name for the structure set.
+     * Extracts the structure name from the first structure in the set.
+     *
+     * @param set The HolderSet containing structures
+     * @return A formatted structure name (e.g., "minecraft:village")
      */
     private static String prettyName(HolderSet<Structure> set) {
-        return set.stream().findFirst()
-                .flatMap(h -> h.unwrapKey())
+        return set.stream()
+                .findFirst()
+                .flatMap(Holder::unwrapKey)
                 .map(k -> k.location().toString())
                 .orElse("structure");
     }
-
 }
