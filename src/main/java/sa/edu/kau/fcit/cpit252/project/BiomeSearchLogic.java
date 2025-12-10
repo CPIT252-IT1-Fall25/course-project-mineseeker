@@ -69,8 +69,8 @@ public final class BiomeSearchLogic {
 
             for (int i = 0; i < BIOME_MIN_SAMPLES; i++) {
 
-                iterations++;
-                if (iterations > BIOME_MAX_ITER) break;
+                if (++iterations > BIOME_MAX_ITER)
+                    break;
 
                 double angle = (2 * Math.PI * i) / BIOME_MIN_SAMPLES;
 

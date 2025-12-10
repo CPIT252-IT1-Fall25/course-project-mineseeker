@@ -18,33 +18,32 @@ public final class MineseekerSuggestions {
 
 
         private MineseekerSuggestions() {} // Prevent instantiation
+
+        
         /**
          * Generic suggestion provider generator.
          * Produces suggestions for any registry (structure, biome, etc.)
          */
+    public static final SuggestionProvider<CommandSourceStack> STRUCTURE_SUGGESTIONS = (ctx, builder) ->
 
+            providerFor(
+                    ctx.getSource()
+                            .getLevel()
+                            .registryAccess()
+                            .registryOrThrow(Registries.STRUCTURE)
+            ).getSuggestions(ctx, builder);
 
-    public static final SuggestionProvider<CommandSourceStack> STRUCTURE_SUGGESTIONS =
-            (ctx, builder) -> {
-            ServerLevel level = ctx.getSource().getLevel();
-            Registry<Structure> reg =
-                    level.registryAccess().registryOrThrow(Registries.STRUCTURE);
-
-        return providerFor(reg).getSuggestions(ctx, builder);
-    };
 
         /**
          * New Biome search
          */
-        public static final SuggestionProvider<CommandSourceStack> BIOME_SUGGESTIONS =
-                (ctx, builder) -> {
-                ServerLevel level =
-                        ctx.getSource().getLevel();
-                Registry<Biome> reg =
-                        level.registryAccess().registryOrThrow(Registries.BIOME);
+        public static final SuggestionProvider<CommandSourceStack> BIOME_SUGGESTIONS = (ctx, builder) ->
 
-            return providerFor(reg).getSuggestions(ctx, builder);
-        };
+            providerFor(
+                    ctx.getSource().getLevel()
+                            .registryAccess()
+                            .registryOrThrow(Registries.BIOME)
+            ).getSuggestions(ctx, builder);
 
         private static <T> SuggestionProvider<CommandSourceStack> providerFor(Registry<T> registry) {
             return (ctx, builder) -> {

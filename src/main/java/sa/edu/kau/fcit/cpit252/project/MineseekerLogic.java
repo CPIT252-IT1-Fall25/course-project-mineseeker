@@ -19,7 +19,7 @@ import net.minecraft.commands.CommandSourceStack;
  */
 public final class MineseekerLogic {
 
-    // Optimization constants
+    // Structure search tuning
     public static final int STRUCTURE_MIN_SAMPLES_PER_RING = 12;
     public static final int STRUCTURE_MAX_SAMPLES_PER_RING = 32;
     public static final int STRUCTURE_RING_SIZE = 512; // blocks per ring
@@ -28,9 +28,7 @@ public final class MineseekerLogic {
     public static final int STRUCTURE_CANDIDATE_MULTIPLIER = 3; // Find 3x requested count for better selection
 
 
-    // -------------------------
-    // BIOME SEARCH CONSTANTS
-    // -------------------------
+    // Biome search tuning
     public static final int BIOME_MIN_SAMPLES = 24;   // DIFFERENT VALUE
     public static final int BIOME_RING_SIZE = 256;    // DIFFERENT VALUE
     public static final int BIOME_CANDIDATE_MULTIPLIER = 3;
@@ -65,7 +63,7 @@ public final class MineseekerLogic {
      * Now moved to StractureSearchLogic
      */
     private static int runStractureSearch(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
-        return StructureSearchLogic.runStructureSearch(ctx, radiusBlocks);
+        return StructureSearchLogic.runStructureSearch(ctx, radiusBlocks); //thanks to our scientest GPT for the algorithm
     }
 
     /**
@@ -74,7 +72,7 @@ public final class MineseekerLogic {
      * Now moved to BiomeSearchLogic
      */
     public static int runBiomeSearch(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
-        return BiomeSearchLogic.runBiomeSearch(ctx, radiusBlocks);
+        return BiomeSearchLogic.runBiomeSearch(ctx, radiusBlocks); // thanks to our scientest GPT for the algorithm
 
     }
 
