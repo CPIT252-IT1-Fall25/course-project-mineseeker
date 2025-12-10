@@ -1,49 +1,117 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/Fv869B0L)
-# Mineseeker
+# Mineseeker - Minecraft Structure & Biome Finder
 
-
-## Description
-Mineseeker is a Minecraft Forge mod that enables players to locate multiple structures/biomes simultaneously. Users can specify the type of structure, the quantity to find, and the search radius, making it a powerful tool for exploration, fixing the core issue of the vanilla Locate command.
-
-This mod was developed by Yousef Wajeeh, Faris Al-Harthi, and Anas Ibrahim
-as part of the CPIT252 course project.
-
+A Minecraft Forge mod that helps players locate structures and biomes efficiently using optimized search algorithms.
 
 ## Features
--   Find multiple instances of any in-game structure (e.g., villages, shipwrecks, ancient cities).
--   Specify the number of locations to find.
--   Set a custom search radius in blocks.
--   Provides auto-complete suggestions for structure names to make the command easier to use.
+
+- **Structure Search**: Find any Minecraft structure (villages, temples, strongholds, etc.)
+- **Biome Search**: Locate specific biomes quickly
+- **Click-to-Teleport**: Interactive coordinates with teleport functionality
+- **Adaptive Search**: Automatically optimizes search speed based on radius
+- **Smart Filtering**: Prevents duplicate results from the same chunk
+
+## Design Patterns Used
+
+### 1. Builder Pattern
+- **Location**: `MineseekerCommand.java`
+- **Purpose**: Uses Brigadier's `LiteralArgumentBuilder` to construct complex commands incrementally
+- **Example**: `.literal("mineseeker").then(...).executes(...)`
+
+### 2. Command Pattern
+- **Location**: `MineseekerCommand.java` + `MineseekerLogic.java`
+- **Purpose**: Decouples command invocation from execution
+- **Components**:
+    - **Invoker**: LiteralArgumentBuilder
+    - **Commands**: `runWithDefaultRadius()`, `runWithCustomRadius()`
+    - **Receiver**: StructureSearchLogic, BiomeSearchLogic
+
+### 3. Facade Pattern
+- **Location**: `MineseekerLogic.java`
+- **Purpose**: Provides simple interface hiding complex search operations
+- **Benefit**: Commands don't need to know about search algorithms
+
+### 4. Strategy Pattern
+- **Location**: `search/SearchStrategy.java` and implementations
+- **Purpose**: Allows different search algorithms (Radial, Spiral)
+- **Benefit**: Easy to add new search patterns without modifying existing code
+
+## Installation
+
+1. Download the latest `.jar` from [Releases](releases/)
+2. Place in your Minecraft `mods/` folder
+3. Requires Minecraft Forge [version]
 
 ## Usage
 
-Duo to some potential unfair environment in a multiplayer mod you must enable cheats in the settings, in this case the player will not be able to use this mod unless they turns it on, this step is essential to make sure that the player can't access the command without a permissionin.
+### Structure Search
 
-The mod provides a single command with a few arguments.
+/mineseeker structure <structure_name> <count> [radius]
 
-```
-/mineseeker <structure_name> <count> [radius]
-```
+**Examples:**
 
--   `<structure_name>`: The name of the structure you want to find (e.g., `village`, `ancient_city`).
--   `<count>`: The number of structures to locate (1-50).
--   `[radius]`: (Optional) The search radius in blocks (512-64000). If not specified, it defaults to 12,000 blocks.
+```/mineseeker structure village 5``` 
 
-## Screenshots
+```/mineseeker structure stronghold 1 30000```
 
-<img width="617" height="133" alt="image" src="https://github.com/user-attachments/assets/2d4c6550-507d-477c-8346-af723d180d1e" />
+```/mineseeker structure desert_pyramid 3 15000```
 
-As of now, the command confirms the parameters, but the full search logic is a work in progress.
+### Biome Search
+/mineseeker biome <biome_name> <count> [radius]
+
+**Examples:**
+
+```/mineseeker biome mushroom_fields 1```
+
+```/mineseeker biome ice_spikes 2 20000```
+
+### Parameters
+- `structure_name` / `biome_name`: Use tab completion for valid names
+- `count`: Number of locations to find (1-50)
+- `radius`: Search radius in blocks (512-64000, default: 12000)
 
 ## Building from Source
-
-This project uses the Gradle build system. To build the mod and test it in the Minecraft client, you can run the following command from the project's root directory:
-
 ```bash
-./gradlew runClient
+git clone [your-repo-url]
+cd mineseeker
+./gradlew build
 ```
 
+Output `.jar` will be in `build/libs/`
+
+
+## LLM Usage Disclosure
+
+We used ChatGPT/Claude to assist with:
+- Search algorithm optimization (ring-based search pattern)
+- Design pattern implementation guidance
+- Code refactoring suggestions
+- Documentation generation
+
+All code was reviewed, tested, and modified by team members.
+
+## Project Structure
+```
+src/main/java/.../project/
+├── Mineseeker.java              # Main mod class
+├── Config.java                  # Configuration
+├── MineseekerCommand.java       # Command registration (Builder + Command patterns)
+├── MineseekerLogic.java         # Facade for search operations
+├── MineseekerSuggestions.java   # Tab completion suggestions
+├── StructureSearchLogic.java    # Structure search implementation
+├── BiomeSearchLogic.java        # Biome search implementation
+├── search/
+│   ├── SearchStrategy.java      # Strategy interface
+│   └── strategies/
+│       ├── RadialSearchStrategy.java
+│       └── SpiralSearchStrategy.java
+└── util/
+└── ComponentUtils.java      # Reusable utilities
+```
 
 ## License
 
 This project is licensed under the MIT License.
+
+## Credits
+
+Developed as a final project for CPIT252 - Software Design Patterns course at King Abdulaziz University.
