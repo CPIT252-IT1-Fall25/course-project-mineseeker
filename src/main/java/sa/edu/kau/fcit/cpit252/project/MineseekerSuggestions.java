@@ -7,13 +7,21 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.structure.Structure;
-    /**
-    * DESIGN PATTERN: Singleton / Static Utility
-    *
-    * This class exposes a single static SuggestionProvider.
-    * The responsibility is centralized: generate structure name suggestions.
-    * It is stateless and globally accessible without instantiation, resembling Singleton behavior.
-    */
+/**
+ * RESPONSIBILITY: Centralized Command Suggestions Provider
+ *
+ * This class centralizes all autocomplete logic used by the mineseeker commands.
+ * It exposes reusable, stateless SuggestionProvider instances for Brigadier.
+ *
+ * Core characteristics:
+ * - No internal state: suggestion data is derived directly from the active game registries.
+ * - Registry-driven: structure and biome names are read dynamically from Minecraft registries.
+ * - Decoupled from commands: command classes depend only on these providers, not on registry logic.
+ *
+ * The class exists purely to isolate suggestion-generation concerns and prevent
+ * duplication of registry traversal code across command definitions.
+ */
+
 public final class MineseekerSuggestions {
 
 

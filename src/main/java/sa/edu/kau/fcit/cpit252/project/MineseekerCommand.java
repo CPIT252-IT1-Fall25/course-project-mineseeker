@@ -9,7 +9,6 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
     /**
     * DESIGN PATTERN: Builder Pattern
-     *
     * This class uses the Builder Pattern via Brigadier's LiteralArgumentBuilder.
     * Each step of the command is chained:
     * - literal("mineseeker")       - command name
@@ -23,7 +22,21 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
     * This part uses the Command Pattern: the LiteralArgumentBuilder is the invoker,
     * the executes(...) method references are concrete commands,
     * and MineseekerLogic methods are the receiver that perform the actual action.
+    * ----------------------------------------------------------------------------------
+    * DESIGN PATTERN: Strategy Pattern
+    *
+    * The command tree selects different search strategies based on subcommands.
+    *
+    * - "structure" subcommand → StructureSearchLogic strategy
+    * - "biome" subcommand     → BiomeSearchLogic strategy
+    *
+    * MineseekerCommand determines WHICH strategy is used,
+    * while MineseekerLogic delegates execution to the selected strategy.
+    *
+    * This allows multiple search algorithms to coexist and vary independently
+    * without changing the command construction logic.
     */
+
 public final class MineseekerCommand {
 
     @SubscribeEvent
