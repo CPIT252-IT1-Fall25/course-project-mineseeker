@@ -185,3 +185,16 @@ tasks.named('jar', Jar).configure {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // ---- Add these 3 lines ----
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.3'
+    testImplementation 'org.mockito:mockito-core:5.7.0'
+    testImplementation 'org.mockito:mockito-inline:5.2.0'
+}
