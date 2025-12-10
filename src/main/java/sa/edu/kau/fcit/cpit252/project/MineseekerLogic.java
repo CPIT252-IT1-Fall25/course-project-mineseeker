@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.HoverEvent;
@@ -85,7 +86,7 @@ public final class MineseekerLogic {
         }
 
         ServerLevel level = player.serverLevel();
-        String rawIn = StringArgumentType.getString(ctx, "structure");
+        String rawIn = StringArgumentType.getString(ctx, "target"); //changed to target for the new suggestions
         int requestedCount = IntegerArgumentType.getInteger(ctx, "count");
 
         HolderSet<Structure> target = resolveTarget(level, rawIn);
@@ -280,10 +281,8 @@ public final class MineseekerLogic {
         if (match.isPresent()) {
             return HolderSet.direct(match.get());
         }
-
         return null;
     }
-
     /**
      * Convert string to ResourceLocation.
      * Handles both "namespace:path" and plain "path" (defaults to minecraft:path).
@@ -345,4 +344,146 @@ public final class MineseekerLogic {
                 .map(k -> k.location().toString())
                 .orElse("structure");
     }
-}
+
+
+       /**
+        * BIOME SEARCH LOGIC
+        * Works like the structure search, but for biomes.
+        */
+       public static int runBiomeSearch(CommandContext<CommandSourceStack> ctx, int radiusBlocks) {
+           CommandSourceStack src = ctx.getSource();
+           ServerPlayer player;
+
+           try {
+               player = src.getPlayerOrException();
+           } catch (Exception e) {
+               src.sendFailure(Component.literal("This command can only be used by players."));
+               return 0;
+           }
+
+           ServerLevel level = player.serverLevel();
+           BlockPos origin = player.blockPosition();
+
+           String biomeInput = StringArgumentType.getString(ctx, "target").toLowerCase(Locale.ROOT); //target same as before instead of biome
+           int requestedCount = IntegerArgumentType.getInteger(ctx, "count");
+
+           HolderSet<Biome> targets = resolveBiomeTarget(level, biomeInput);
+           if (targets == null || targets.size() == 0) {
+               src.sendFailure(Component.literal("Unknown biome: '" + biomeInput + "'"));
+               return 0;
+           }
+
+           // ---- SEARCH PARAMETERS ----
+           int samplesPerRing = 24;
+           int ringStep = 256;
+           int maxRings = Math.max(1, radiusBlocks / ringStep);
+
+           // Track unique biome positions by chunk
+           record ChunkKey(int cx, int cz) {}
+           Set<ChunkKey> seen = new HashSet<>();
+           Map<ChunkKey, BlockPos> found = new HashMap<>();
+
+           // ---- RING SCANNING ----
+           for (int ring = 1; ring <= maxRings; ring++) {
+               int radius = ring * ringStep;
+
+               for (int i = 0; i < samplesPerRing; i++) {
+                   double angle = (2 * Math.PI * i) / samplesPerRing;
+
+                   int x = origin.getX() + (int)(Math.cos(angle) * radius);
+                   int z = origin.getZ() + (int)(Math.sin(angle) * radius);
+
+                   BlockPos pos = new BlockPos(x, origin.getY(), z);
+                   Holder<Biome> biome = level.getBiome(pos);
+
+                   if (targets.contains(biome)) {
+                       ChunkKey key = new ChunkKey(x >> 4, z >> 4);
+
+                       if (seen.add(key))
+                           found.put(key, pos);
+
+                       if (found.size() >= requestedCount * 3)
+                           break;
+                   }
+               }
+           }
+
+           if (found.isEmpty()) {
+               src.sendFailure(Component.literal("No biomes matching '" + biomeInput +
+                       "' found within " + radiusBlocks + " blocks."));
+               return 0;
+           }
+
+           // ---- SORT RESULTS BY DISTANCE ----
+           List<BlockPos> best = found.values().stream()
+                   .sorted(Comparator.comparingDouble(p -> origin.distSqr(p)))
+                   .limit(requestedCount)
+                   .collect(Collectors.toList());
+
+           src.sendSuccess(() -> Component.literal(
+                   "Found " + best.size() + " biome(s) matching '" + biomeInput +
+                           "' within " + radiusBlocks + " blocks:"
+           ), false);
+
+           // ---- SHOW RESULTS ----
+           for (int i = 0; i < best.size(); i++) {
+               BlockPos p = best.get(i);
+               long distance = Math.round(Math.sqrt(origin.distSqr(p)));
+
+               Component coordsComponent = Component.literal(
+                       String.format("[%d, %d, %d]", p.getX(), p.getY(), p.getZ())
+               ).withStyle(style -> style
+                       .withColor(0x00FF00)
+                       .withClickEvent(new ClickEvent(
+                               ClickEvent.Action.RUN_COMMAND,
+                               "/tp " + player.getName().getString() +
+                                       " " + p.getX() + " " + p.getY() + " " + p.getZ()
+                       ))
+                       .withHoverEvent(new HoverEvent(
+                               HoverEvent.Action.SHOW_TEXT,
+                               Component.literal("Click to teleport")
+                       ))
+               );
+
+               Component line = Component.literal("  " + (i + 1) + ". ")
+                       .append(coordsComponent)
+                       .append(Component.literal(" (" + distance + " blocks away)"));
+
+               src.sendSuccess(() -> line, false);
+           }
+
+           return best.size();
+       }
+
+       /**
+        * Resolve biome input (tags, ids, fuzzy)
+        */
+       private static HolderSet<Biome> resolveBiomeTarget(ServerLevel level, String raw) {
+           Registry<Biome> reg = level.registryAccess().registryOrThrow(Registries.BIOME);
+
+           if (raw.startsWith("#")) {
+               ResourceLocation tagId = new ResourceLocation(raw.substring(1));
+               TagKey<Biome> tag = TagKey.create(Registries.BIOME, tagId);
+               return reg.getTag(tag).map(x -> (HolderSet<Biome>) x).orElse(null);
+           }
+
+           ResourceLocation id = raw.contains(":")
+                   ? new ResourceLocation(raw)
+                   : new ResourceLocation("minecraft", raw);
+
+           Optional<Holder.Reference<Biome>> direct =
+                   reg.getHolder(ResourceKey.create(Registries.BIOME, id));
+
+           if (direct.isPresent()) return HolderSet.direct(direct.get());
+
+           Optional<Holder.Reference<Biome>> fuzzy = reg.holders()
+                   .filter(h -> h.unwrapKey().isPresent())
+                   .filter(h -> h.unwrapKey().get().location().getPath().equals(raw))
+                   .findFirst();
+
+           return fuzzy.map(HolderSet::direct).orElse(null);
+       }
+
+
+
+   }
