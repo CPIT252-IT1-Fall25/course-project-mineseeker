@@ -1,5 +1,6 @@
 package sa.edu.kau.fcit.cpit252.project;
 
+import sa.edu.kau.fcit.cpit252.project.util.ComponentUtils;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -114,19 +115,8 @@ public final class BiomeSearchLogic {
             BlockPos p = best.get(i);
             long distance = Math.round(Math.sqrt(origin.distSqr(p)));
 
-            Component coordsComponent = Component.literal(
-                    String.format("[%d, %d, %d]", p.getX(), p.getY(), p.getZ())
-            ).withStyle(style -> style
-                    .withColor(0x00FF00)
-                    .withClickEvent(new ClickEvent(
-                            ClickEvent.Action.RUN_COMMAND,
-                            "/tp " + player.getName().getString() +
-                                    " " + p.getX() + " " + p.getY() + " " + p.getZ()
-                    ))
-                    .withHoverEvent(new HoverEvent(
-                            HoverEvent.Action.SHOW_TEXT,
-                            Component.literal("Click to teleport")
-                    ))
+            Component coordsComponent = ComponentUtils.createTeleportComponent(
+                    p, player.getName().getString()
             );
 
             Component line = Component.literal("  " + (i + 1) + ". ")

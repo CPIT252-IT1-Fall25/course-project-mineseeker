@@ -10,16 +10,16 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
-import net.minecraft.util.Mth;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import sa.edu.kau.fcit.cpit252.project.search.SearchStrategy;
+import sa.edu.kau.fcit.cpit252.project.search.strategies.RadialSearchStrategy;
+import sa.edu.kau.fcit.cpit252.project.util.ComponentUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -71,6 +71,9 @@ public final class StructureSearchLogic {
         int totalIterations = 0;
         int targetCandidates = requestedCount * CANDIDATE_MULTIPLIER;
 
+        // DESIGN PATTERN: Strategy Pattern
+        SearchStrategy strategy = new RadialSearchStrategy();
+
         // Search in expanding rings around the player
         outer:
         for (int ring = 1; ring <= maxRings; ring++) {
@@ -78,25 +81,20 @@ public final class StructureSearchLogic {
             int radiusChunks = Math.max(16, ringRadius / 16);
             boolean foundInRing = false;
 
-            for (int i = 0; i < samplesPerRing; i++) {
+            // Generate sample probe points using Strategy Pattern
+            List<BlockPos> searchPositions =
+                    strategy.generateSearchPositions(playerPos, ringRadius, samplesPerRing);
+
+            for (BlockPos probe : searchPositions) {
+
                 totalIterations++;
-
-                // Safety limit to prevent extremely long searches
-                if (totalIterations > MAX_TOTAL_ITERATIONS) {
+                if (totalIterations > MAX_TOTAL_ITERATIONS)
                     break outer;
-                }
 
-                // Calculate probe position in a circle around the player
-                double angle = 2 * Math.PI * i / samplesPerRing;
-                BlockPos probe = playerPos.offset(
-                        Mth.floor(Math.cos(angle) * ringRadius),
-                        0,
-                        Mth.floor(Math.sin(angle) * ringRadius)
-                );
-
-                // Search for nearest structure from this probe point
-                Pair<BlockPos, Holder<Structure>> result = level.getChunkSource().getGenerator()
-                        .findNearestMapStructure(level, target, probe, radiusChunks, false);
+                // Find nearest structure from probe point
+                Pair<BlockPos, Holder<Structure>> result =
+                        level.getChunkSource().getGenerator()
+                                .findNearestMapStructure(level, target, probe, radiusChunks, false);
 
                 if (result == null) continue;
 
@@ -135,7 +133,7 @@ public final class StructureSearchLogic {
 
         // Sort by distance and take the N closest structures
         List<BlockPos> best = found.values().stream()
-                .sorted(Comparator.comparingDouble(p -> dist2DSquared(p, playerPos)))
+                .sorted(Comparator.comparingDouble(p -> ComponentUtils.distance2D(p, playerPos)))
                 .limit(requestedCount)
                 .collect(Collectors.toList());
 
@@ -145,33 +143,18 @@ public final class StructureSearchLogic {
                 String.format("Found %d %s within %d blocks:", best.size(), structureName, radiusBlocks)
         ), false);
 
-        // Send individual structure locations
         // Send individual structure locations (click-to-teleport)
         for (int i = 0; i < best.size(); i++) {
-            final int idx = i;
-            BlockPos p = best.get(idx);
-            long distance = Math.round(dist2D(p, playerPos));
 
-            Component coordsComponent = Component.literal(
-                    String.format("[%d, %d, %d]", p.getX(), p.getY(), p.getZ())
-            ).withStyle(style -> style
-                    .withColor(0x00FF00)
-                    .withClickEvent(new ClickEvent(
-                            ClickEvent.Action.RUN_COMMAND,
-                            // run as the clicking player; use src.getPlayerOrException().getName().getString() if needed
-                            "/tp " + player.getName().getString()
-                                    + " " +
-                                    p.getX() + " " + p.getY() + " " + p.getZ()
-                    ))
-                    .withHoverEvent(new HoverEvent(
-                            HoverEvent.Action.SHOW_TEXT,
-                            Component.literal("Click to teleport")
-                    ))
-            );
+            BlockPos p = best.get(i);
+            long distance = Math.round(ComponentUtils.distance2D(p, playerPos));
 
-            Component line = Component.literal("  " + (idx + 1) + ". ")
+            Component coordsComponent =
+                    ComponentUtils.createTeleportComponent(p, player.getName().getString());
+
+            Component line = Component.literal("  " + (i + 1) + ". ")
                     .append(coordsComponent)
-                    .append(Component.literal(String.format(" (%d blocks away)", distance)));
+                    .append(Component.literal(" (" + distance + " blocks away)"));
 
             src.sendSuccess(() -> line, false);
         }
@@ -220,33 +203,6 @@ public final class StructureSearchLogic {
             return null;
         }
     }
-
-    /**
-     * Calculate squared 2D distance between two block positions (ignoring Y coordinate).
-     * Used for distance comparisons to avoid expensive sqrt calculations.
-     *
-     * @param a First position
-     * @param b Second position
-     * @return Squared distance
-     */
-    private static double dist2DSquared(BlockPos a, BlockPos b) {
-        double dx = a.getX() - b.getX();
-        double dz = a.getZ() - b.getZ();
-        return dx * dx + dz * dz;
-    }
-
-    /**
-     * Calculate 2D distance between two block positions (ignoring Y coordinate).
-     * Used for display purposes only.
-     *
-     * @param a First position
-     * @param b Second position
-     * @return Distance in blocks
-     */
-    private static double dist2D(BlockPos a, BlockPos b) {
-        return Math.sqrt(dist2DSquared(a, b));
-    }
-
 
     /**
      * Get a pretty name for the structure set.

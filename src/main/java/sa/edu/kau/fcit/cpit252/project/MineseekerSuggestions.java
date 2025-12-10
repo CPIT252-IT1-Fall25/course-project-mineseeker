@@ -19,7 +19,7 @@ public final class MineseekerSuggestions {
 
         private MineseekerSuggestions() {} // Prevent instantiation
 
-        
+
         /**
          * Generic suggestion provider generator.
          * Produces suggestions for any registry (structure, biome, etc.)

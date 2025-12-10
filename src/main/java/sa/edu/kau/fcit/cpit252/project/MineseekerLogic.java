@@ -5,17 +5,16 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 
 /**
- * DESIGN PATTERN: Facade
- * <p>
- * This class encapsulates all the execution logic for the mineseeker command.
- * It provides a simplified interface:
- * - runWithDefaultRadius()
- * - runWithCustomRadius()
- * <p>
- * Internally handles complex operations: searching structures in rings, distance sorting,
- * formatting output, click-to-teleport components.
- * <p>
- * The class is stateless and globally accessible, like a utility facade for command execution.
+ * DESIGN PATTERN: Facade Pattern
+ *
+ * Provides a simplified interface for executing mineseeker commands.
+ * Encapsulates complex search operations and delegates to specialized logic classes.
+ *
+ * This class serves as the entry point for all search operations, hiding the
+ * complexity of different search algorithms and strategies from the command layer.
+ *
+ * @author Yousef Wajeeh, Faris Al-Harthi, Anas Ibrahim.
+ * @version 0.2
  */
 public final class MineseekerLogic {
 
