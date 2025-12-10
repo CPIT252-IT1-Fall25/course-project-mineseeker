@@ -1,0 +1,144 @@
+# High-level flow (what happens when the mod loads and the user runs `/mineseeker ...`)
+
+1. **Command registration (startup)**
+
+   * `MineseekerCommand.onRegisterCommands` is annotated with `@SubscribeEvent` so Forge calls it during command registration.
+   * It gets a Brigadier `dispatcher` from the event and builds the command tree: a root literal `mineseeker` that requires permission level 2, with two subcommands: `structure` and `biome`.
+   * Each subcommand is constructed with `LiteralArgumentBuilder` / `Commands.argument(...)` chaining. That builder chain attaches argument types, suggestion providers, and `executes(...)` handlers. The builder pattern makes the command tree readable and composable.
+
+2. **Autocomplete / suggestions wiring**
+
+   * For `structure` the argument `"target"` is wired to `MineseekerSuggestions.STRUCTURE_SUGGESTIONS`.
+   * For `biome` the argument `"target"` uses `MineseekerSuggestions.BIOME_SUGGESTIONS`.
+   * Those suggestion providers look up the appropriate registry (structures or biomes) from the current server level and offer matches based on what the user has started typing.
+
+3. **Parsing arguments and dispatching execution**
+
+   * Brigadier parses user input into a `CommandContext<CommandSourceStack>` (the `ctx`).
+   * Depending on which `executes(...)` handler was attached by the builder, the dispatcher will call either:
+
+     * `MineseekerLogic.runWithDefaultRadius(ctx)` — when user provided no radius argument, or
+     * `MineseekerLogic.runWithCustomRadius(ctx)` — when the `radiusBlocks` argument was provided, or
+     * For biomes, `MineseekerLogic.runBiomeSearch(ctx, radius)` is called directly from the lambda attached to the builder.
+
+4. **MineseekerLogic (facade / delegation)**
+
+   * `runWithDefaultRadius` and `runWithCustomRadius` extract the radius to use and call `runStractureSearch(ctx, radius)` (which delegates to `StructureSearchLogic.runStructureSearch`).
+   * `runBiomeSearch(ctx, radius)` delegates to `BiomeSearchLogic.runBiomeSearch`.
+   * Purpose: centralize the command-facing entry points and hide the search implementation classes.
+
+5. **Biome search algorithm (what `BiomeSearchLogic.runBiomeSearch` does)**
+
+   * Validate caller: obtains `ServerPlayer` from `ctx.getSource().getPlayerOrException()`; if not a player, sends failure.
+
+   * Get `ServerLevel level = player.serverLevel()` — the world (dimension) the player is in. `origin = player.blockPosition()` — player's current block coordinates.
+
+   * Read user inputs: `biomeInput = StringArgumentType.getString(ctx, "target")`, `requestedCount = IntegerArgumentType.getInteger(ctx, "count")`.
+
+   * Resolve the biome target(s) via `resolveBiomeTarget(level, biomeInput)`. That method supports:
+
+     * Tag syntax (`#mod:tag`) → returns all biomes in that tag.
+     * Full resource id (`mod:biome`) or short name (`biome`) → attempts direct lookup then fuzzy path match.
+
+   * If no matching biomes found, send failure and return.
+
+   * **Scanning setup:** compute `maxRings = radiusBlocks / BIOME_RING_SIZE` and iterate rings outward from the origin. For each ring:
+
+     * Sample `BIOME_MIN_SAMPLES` angular positions around the ring. Each sample computes coordinates `(x, z)` using `cos(angle)`/`sin(angle)` scaled by the ring radius; `y` uses `origin.getY()`.
+     * Query the biome at that `BlockPos` with `level.getBiome(pos)` which returns a `Holder<Biome>` to compare against the resolved target `HolderSet<Biome>`.
+     * If match, deduplicate by chunk: compute `ChunkKey(x >> 4, z >> 4)` (chunk coordinates) and add the first matching position in that chunk to `found`. This ensures unique chunk-level positions and avoids many coordinates clustered in one chunk.
+     * Stop conditions: stop if you collected `requestedCount * BIOME_CANDIDATE_MULTIPLIER` candidates or you exceed `BIOME_MAX_ITER` samples overall.
+
+   * **Result processing:** if `found` is empty, send failure. Otherwise:
+
+     * Sort found positions by squared distance to origin, take the top `requestedCount`.
+     * Send a success message summarizing how many were found.
+     * For each chosen position produce a clickable teleport/component line using `ComponentUtils.createTeleportComponent(p, playerName)` and send it to the player. Return number found.
+
+# Line-by-line/term explanations (concise definitions and roles)
+
+* **`ctx`** (`CommandContext<CommandSourceStack>`): the Brigadier parsed context for this command invocation. It contains:
+
+  * the `CommandSourceStack` (the caller and environment),
+  * parsed arguments (accessible via `StringArgumentType.getString(ctx,"target")`, `IntegerArgumentType.getInteger(ctx,"count")`),
+  * and utilities used by suggestion providers and execution handlers.
+
+* **`CommandSourceStack src`**: an object representing who ran the command and under what conditions. It provides methods to access the player, level, server, permission checks, and to send messages (`sendSuccess`, `sendFailure`).
+
+* **`player` / `ServerPlayer`**: the actual player entity that invoked the command. Obtained from `src.getPlayerOrException()`. Used to:
+
+  * get the player's current position (`player.blockPosition()`),
+  * the player's world/dimension (`player.serverLevel()`),
+  * send messages personalized to the player,
+  * and to create teleport components that reference the player's name.
+
+* **`level` / `ServerLevel`**: the server-side representation of the world/dimension (Overworld, Nether, etc.). It provides registry access and methods to query block/biome/structure data at arbitrary positions (e.g., `level.getBiome(pos)`).
+
+* **`origin` / `BlockPos`**: a 3D integer block coordinate representing a position in the world. Here it is set to the player's block position and used as the center for ring searches.
+
+* **`radiusBlocks`**: numeric limit how far from `origin` the search will look (in blocks). If unspecified the command uses a default (12000 in your code). The code converts this into `maxRings` by dividing by the ring step size.
+
+* **`BIOME_RING_SIZE`, `BIOME_MIN_SAMPLES`, `BIOME_MAX_ITER`, `BIOME_CANDIDATE_MULTIPLIER`**: tuning constants:
+
+  * `BIOME_RING_SIZE`: the radial step between successive rings of samples.
+  * `BIOME_MIN_SAMPLES`: how many angular samples per ring.
+  * `BIOME_MAX_ITER`: global safety cap on how many sample points to check.
+  * `BIOME_CANDIDATE_MULTIPLIER`: collect this many candidates per requested result to allow sorting/choosing the best matches.
+
+* **`ring` and `iterations`**: `ring` is the current ring index (1..maxRings). `iterations` is a counter that increments for every sample checked and is used to stop early if the search is taking too long.
+
+* **Angle sampling math**:
+
+  * `angle = (2 * Math.PI * i) / BIOME_MIN_SAMPLES` — distributes samples evenly around a circle.
+  * `x = origin.x + cos(angle) * radius`, `z = origin.z + sin(angle) * radius` — convert polar to Cartesian coordinates for a point on the ring.
+
+* **`Holder<Biome>` and `HolderSet<Biome>`**:
+
+  * `Holder<Biome>` is Brigadier/Minecraft's wrapper for a registry entry (a biome reference).
+  * `HolderSet<Biome>` represents one or many biome holders (used for tags or direct single matches).
+  * `targets.contains(biome)` checks whether the biome at a sampled position matches the requested target(s).
+
+* **`Registry<Biome>` and `Registries.BIOME`**: the in-game registry that maps resource IDs (like `minecraft:plains`) to biome objects. `resolveBiomeTarget` queries this registry to interpret the user's `target` argument.
+
+* **`ResourceLocation` and `ResourceKey`**: identifiers for registry entries (format `namespace:path`, e.g., `minecraft:plains`). `ResourceLocation` is the textual id; `ResourceKey` is the typed reference used to look up holders.
+
+* **`TagKey<Biome>` and `#tag` syntax**: if the user starts the target with `#`, the code interprets that as a tag ID and looks up all biomes that carry that tag (groups of biomes).
+
+* **`ChunkKey(x >> 4, z >> 4)`**: integer division by 16 (bit-shift by 4) converts block coordinates to chunk coordinates. Used to ensure results are unique per chunk (avoid duplicates inside the same chunk).
+
+* **`found` map**: maps chunk keys to the first matching `BlockPos` in that chunk. That provides a compact set of candidate locations.
+
+* **`Component` / `ComponentUtils.createTeleportComponent(...)`**:
+
+  * `Component` is Minecraft's chat message object (can contain hover/ click events).
+  * `createTeleportComponent` builds a clickable message that will teleport the player if clicked (or at least offers that behavior; implementation detail depends on `ComponentUtils`).
+
+* **`src.sendSuccess(() -> Component.literal(...), false)` and `src.sendFailure(Component.literal(...))`**:
+
+  * `sendSuccess` sends a success message to the command caller and optionally to logging/ops depending on the boolean; it takes a supplier to defer message creation.
+  * `sendFailure` sends an error/failure message.
+
+* **`SuggestionProvider<CommandSourceStack>` and `.suggests(...)`**:
+
+  * A `SuggestionProvider` is a callback used by Brigadier to compute autocomplete options for a particular argument. `MineseekerSuggestions` provides two static providers that inspect the current `level` registry and call `builder.suggest(path)` for any registry entry whose path starts with what the user has typed so far.
+
+* **`Commands.argument("count", IntegerArgumentType.integer(1, 50))`**: defines an integer argument named `count` constrained between 1 and 50.
+
+* **Method references vs lambdas in `.executes(...)`**:
+
+  * `executes(MineseekerLogic::runWithDefaultRadius)` — direct method reference that accepts a `CommandContext` and returns an `int`. Brigadier will call that when the argument parsing reaches that node.
+  * `executes(ctx -> MineseekerLogic.runBiomeSearch(ctx, 12000))` — lambda to pass an extra parameter (default radius) to the logic method.
+
+# Why some choices are made (design rationale)
+
+* **Ring sampling** is used because it’s cheaper than brute-force scanning every block. Sampling rings at increasing radii gives likely spread of candidates with controllable cost.
+* **Chunk deduplication** reduces spamming many coordinates that are effectively the same search target for the player.
+* **Collecting more candidates than requested** (`BIOME_CANDIDATE_MULTIPLIER`) enables selecting the closest/most relevant results after sorting, rather than returning the first matches which might be suboptimal.
+
+# Quick summary of developer-visible entry points
+
+* **To register commands:** `MineseekerCommand.onRegisterCommands` is where the command tree is defined.
+* **To add suggestions:** update `MineseekerSuggestions.providerFor(...)` logic.
+* **To change search behavior:** modify `BiomeSearchLogic` or `StructureSearchLogic` (the heavy algorithms) and keep `MineseekerLogic` as the façade if desired.
+
+This covers the execution path and the roles of the main variables/objects (`ctx`, `src`, `player`, `level`, `origin`, `Holder/HolderSet`, `Registry`, search tuning constants, and result reporting).
